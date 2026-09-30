@@ -19,7 +19,42 @@ export interface ExecutionContext { payload:Record<string,unknown> }
 export const samplePayload = '{\n  "event": "order.created",\n  "order_id": "ORD-1042",\n  "customer": "Demo Customer",\n  "amount": 1499,\n  "currency": "ZAR"\n}'
 export function createDefaultWorkflow(): Workflow { const now=new Date().toISOString(); return {id:'default-workflow',name:'Untitled Playground',createdAt:now,updatedAt:now,nodes:[{id:'webhook',type:'workflow',position:{x:120,y:80},data:{kind:'webhook',label:'Webhook',method:'POST',endpoint:'/hooks/demo',samplePayload,executionState:'idle'}},{id:'request',type:'workflow',position:{x:120,y:240},data:{kind:'request',label:'HTTP Request',request:{method:'POST',url:'https://api.example.com/orders',queryParams:{},headers:{'content-type':'application/json'},body:'{\n  "order_id": "{{order_id}}"\n}'},executionState:'idle'}},{id:'response',type:'workflow',position:{x:120,y:400},data:{kind:'response',label:'Response',executionState:'idle'}}],edges:[{id:'e1-2',source:'webhook',target:'request'},{id:'e2-3',source:'request',target:'response'}]} }
 export function isWorkflow(value: unknown): value is Workflow { if(!value||typeof value!=='object') return false; const w=value as Workflow; return typeof w.id==='string'&&typeof w.name==='string'&&Array.isArray(w.nodes)&&Array.isArray(w.edges)&&w.nodes.every(n=>typeof n.id==='string'&&n.position&&n.data?.kind) }
-export function validateWorkflow(workflow:Workflow): ValidationError[] { const errors:ValidationError[]=[]; const ids=new Set(workflow.nodes.map(n=>n.id)); workflow.nodes.forEach(n=>{ if(n.data.kind==='request'){if(!n.data.request.url) errors.push({code:'missing_url',message:'Add a request URL before running.',nodeId:n.id}); else {try{const u=new URL(n.data.request.url); if(!['http:','https:'].includes(u.protocol)) throw new Error()}catch{errors.push({code:'invalid_url',message:'Request URL must be a valid HTTP or HTTPS URL.',nodeId:n.id})} if(n.data.request.body) try{JSON.parse(n.data.request.body.replace(/{{[^}]+}}/g,'"demo"'))}catch{errors.push({code:'invalid_json',message:'Request body contains invalid JSON.',nodeId:n.id})}}}); workflow.edges.forEach(e=>{if(!ids.has(e.source)||!ids.has(e.target)) errors.push({code:'broken_edge',message:'Workflow contains a connection to a missing node.'})}); return errors }
+export function validateWorkflow(workflow: Workflow): ValidationError[] {
+  const errors: ValidationError[] = []
+  const ids = new Set(workflow.nodes.map((node) => node.id))
+
+  workflow.nodes.forEach((node) => {
+    if (node.data.kind !== 'request') return
+
+    if (!node.data.request.url) {
+      errors.push({ code: 'missing_url', message: 'Add a request URL before running.', nodeId: node.id })
+      return
+    }
+
+    try {
+      const url = new URL(node.data.request.url)
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported protocol')
+    } catch {
+      errors.push({ code: 'invalid_url', message: 'Request URL must be a valid HTTP or HTTPS URL.', nodeId: node.id })
+    }
+
+    if (node.data.request.body) {
+      try {
+        JSON.parse(node.data.request.body.replace(/{{[^}]+}}/g, '"demo"'))
+      } catch {
+        errors.push({ code: 'invalid_json', message: 'Request body contains invalid JSON.', nodeId: node.id })
+      }
+    }
+  })
+
+  workflow.edges.forEach((edge) => {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) {
+      errors.push({ code: 'broken_edge', message: 'Workflow contains a connection to a missing node.' })
+    }
+  })
+
+  return errors
+}
 export function serializeWorkflow(workflow:Workflow):string{return JSON.stringify(workflow,null,2)}
 export function parseWorkflow(raw:string):Workflow { const value=JSON.parse(raw) as unknown; if(!isWorkflow(value)) throw new Error('Invalid Hookboard workflow file.'); return value }
 export interface WorkflowStorage { save(workflow:Workflow):Promise<void>; load(id:string):Promise<Workflow|null>; delete(id:string):Promise<void> }
